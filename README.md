@@ -8,7 +8,7 @@ http://apps.man.poznan.pl/trac/slurm-drmaa/wiki
 Limitations
 ===========
 
-This will not work on a standard slurm installation. slurm-drmaa needs access
+This will not work on a standard SLURM installation. slurm-drmaa needs access
 to SLURM's `working_cluster_rec` global in `libslurmdb`, which is not
 extern/public. To fix this you'll need to compile a new `libslurmdb.so`. My
 lazy method for doing this is compiling it once, then editing
@@ -18,3 +18,10 @@ lazy method for doing this is compiling it once, then editing
 Multiple clusters specified in the `-M/--clusters` option are not supported at
 this time.  The code to support this can probably be copied from SLURM's
 `src/sbatch/mult_cluster.c`.
+
+Because DRMAA does not provide a means for reporting back which cluster is
+selected, I've chosen to modify the format of the Job ID returned by the submit
+function. If the native specification does not contain `-M/--clusters`, Job IDs
+are numeric as before. If `-M/--clusters` is passed, the Job ID is appended
+with a `'.'`, followed by the cluster name to which the job was submitted. The
+functions which check job state will also accept Job IDs in this format.
