@@ -12125,7 +12125,7 @@ fi
 $as_echo "$with_slurm_lib$ax_slurm_msg" >&6; }
 
 
-SLURM_LIBS="-lslurm "
+SLURM_LIBS="-lslurmdb -lslurm "
 SLURM_LDFLAGS="-L${with_slurm_lib}"
 
 
