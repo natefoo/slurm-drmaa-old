@@ -18,16 +18,34 @@ Limitations
 libslurmdb incompatibility
 --------------------------
 
-Multicluster support will not work on a standard Slurm installation.
-slurm-drmaa needs access to Slurm's `working_cluster_rec` global in
-`libslurmdb`, which is not extern/public. To fix this you'll need to compile a
-new `libslurmdb.so`. One way to do so follows.
+Multicluster support will not work on a standard Slurm installation prior to
+Slurm 14.11.  slurm-drmaa needs access to Slurm's `working_cluster_rec` global
+in `libslurmdb`, which was not extern/public in older versions. However, older
+versions can be used if you compile a new `libslurmdb.so`. To do so, apply the
+following patch to the Slurm source, reconfigure, and recompile:
 
-In `<slurm-src>/src/db_api/Makefile.in`, in the target that creates
-`version.map` (`$(VERSION_SCRIPT)`), add `working_cluster_rec;` to the
-`global:` list. This change will survive `make distclean`, if you don't want
-that, configure first and then modify `Makefile` with the same change.
-
+```diff
+--- src/db_api/Makefile.am.orig	2014-05-06 11:24:19.000000000 -0500
++++ src/db_api/Makefile.am	2014-10-10 11:48:12.730845279 -0500
+@@ -95,6 +95,7 @@
+ 	(echo "{ global:";   \
+ 	 echo "   slurm_*;"; \
+ 	 echo "   slurmdb_*;"; \
++	 echo "   working_cluster_rec;"; \
+ 	 echo "  local: *;"; \
+ 	 echo "};") > $(VERSION_SCRIPT)
+ 
+--- src/db_api/Makefile.in.orig	2014-05-06 11:24:19.000000000 -0500
++++ src/db_api/Makefile.in	2014-10-10 11:48:22.765938016 -0500
+@@ -915,6 +915,7 @@
+ 	(echo "{ global:";   \
+ 	 echo "   slurm_*;"; \
+ 	 echo "   slurmdb_*;"; \
++	 echo "   working_cluster_rec;"; \
+ 	 echo "  local: *;"; \
+ 	 echo "};") > $(VERSION_SCRIPT)
+```
+ 
 In my instance I then copied the resulting `.libs/libslurdb*.so*` to
 slurm-drmaa's lib directory and configured slurm-drmaa with
 `LDFLAGS='-Wl,-rpath=/path/to/slurm-drmaa/lib' ./configure`, but putting
