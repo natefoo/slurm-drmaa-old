@@ -24,6 +24,8 @@
 #include <time.h>
 #include <drmaa_utils/datetime.h>
 #include <drmaa_utils/datetime_impl.h>
+#include <slurm_drmaa/slurm_missing.h>
+#include <slurm_drmaa/slurm_drmaa.h>
 
 #ifndef lint
 static char rcsid[]
@@ -128,6 +130,7 @@ enum slurm_native {
 	SLURM_NATIVE_TIME_LIMIT,
 	SLURM_NATIVE_NTASKS,
 	SLURM_NATIVE_GRES,
+	SLURM_NATIVE_CLUSTERS,
 	SLURM_NATIVE_NO_KILL,
 	SLURM_NATIVE_LICENSES,
 	SLURM_NATIVE_MAIL_TYPE,
@@ -298,6 +301,14 @@ slurmdrmaa_add_attribute(job_desc_msg_t *job_desc, unsigned attr, const char *va
 			fsd_log_debug(("# gres = %s",value));
 			job_desc->gres = fsd_strdup(value);
 			break;
+		case SLURM_NATIVE_CLUSTERS:
+			#if SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(2,2,0)
+			fsd_log_debug(("# clusters = %s",value));
+			slurmdrmaa_set_cluster(value);
+			#else
+			fsd_log_error(("clusters not supported in this version of SLURM."));
+			#endif
+			break;
 		case SLURM_NATIVE_NO_KILL:
 			fsd_log_debug(("# no_kill = 1"));
 			job_desc->kill_on_node_fail = 0;
@@ -417,6 +428,9 @@ slurmdrmaa_parse_additional_attr(job_desc_msg_t *job_desc,const char *add_attr)
 		else if(strcmp(name,"gres") == 0) {
 			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_GRES,value);
 		}
+		else if(strcmp(name,"clusters") == 0) {
+			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_CLUSTERS,value);
+		}
 		else if(strcmp(name,"no-kill") == 0) {
 			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_NO_KILL,NULL);
 		}
@@ -513,6 +527,9 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 					case 'L' :
 						slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_LICENSES, arg);
 						break;							
+					case 'M' :
+						slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_CLUSTERS, arg);
+						break;
 					default :
 							fsd_exc_raise_fmt(FSD_DRMAA_ERRNO_INVALID_ATTRIBUTE_VALUE,
 									"Invalid native specification: %s (Unsupported option: -%c)",
@@ -563,3 +580,99 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 	fsd_log_return(( "" ));
 }
 
+char *
+slurmdrmaa_set_job_id(job_id_spec_t *job_id_spec)
+{
+	char *ctxt = NULL;
+	char *job_id_copy = fsd_strdup(job_id_spec->original);
+	char *job_id_r = NULL;
+
+	fsd_log_enter(( "({job_id=%s})", job_id_copy));
+
+	if (strchr(job_id_copy, '.'))
+	{
+		job_id_spec->job_id = strtok_r(job_id_copy, ".", &ctxt);
+		job_id_spec->cluster = strtok_r(NULL, ".", &ctxt);
+		fsd_log_debug(( "job_id = %s", job_id_spec->job_id ));
+		fsd_log_debug(( "cluster = %s", job_id_spec->cluster ));
+		job_id_r = job_id_spec->job_id;
+		slurmdrmaa_set_cluster(job_id_spec->cluster);
+	}
+	else
+	{
+		job_id_spec->job_id = NULL;
+		job_id_spec->cluster = NULL;
+		fsd_free(job_id_copy);
+		job_id_r = job_id_spec->original;
+	}
+
+	fsd_log_return(( "; job_id=%s", job_id_r ));
+
+	return job_id_r;
+}
+
+char *
+slurmdrmaa_unset_job_id(job_id_spec_t *job_id_spec)
+{
+
+	if (job_id_spec->job_id)
+	{
+		fsd_log_enter(( "({job_id=%s})", job_id_spec->job_id ));
+		fsd_free(job_id_spec->job_id); /* also frees cluster */
+		job_id_spec->job_id = NULL;
+		job_id_spec->cluster = NULL;
+	}
+	else
+	{
+		fsd_log_enter(( "({job_id=%s})", job_id_spec->job_id ));
+	}
+
+	if (working_cluster_rec)
+	{
+		slurmdb_destroy_cluster_rec(working_cluster_rec);
+		working_cluster_rec = NULL;
+		fsd_log_debug(("unset working_cluster_rec"));
+	}
+
+	fsd_log_return(( "; job_id=%s", job_id_spec->original ));
+
+	return job_id_spec->original;
+}
+
+void
+slurmdrmaa_set_cluster(const char * value)
+{
+	List cluster_list = NULL;
+
+	fsd_log_enter(( "({value=%s})", value));
+
+	/* TODO: support multiple clusters specified in value */
+	cluster_list = slurmdb_get_info_cluster((char *)value);
+
+	TRY
+	{
+		if (!cluster_list || slurm_list_count(cluster_list) < 1)
+			fsd_exc_raise_fmt(FSD_DRMAA_ERRNO_INVALID_ATTRIBUTE_VALUE,
+					"No cluster '%s' known by database.",
+					value);
+
+		if (slurm_list_count(cluster_list) > 1)
+			fsd_exc_raise_fmt(FSD_DRMAA_ERRNO_INVALID_ATTRIBUTE_VALUE,
+					"Only one cluster can be specified at this time");
+
+		if (working_cluster_rec)
+			slurmdb_destroy_cluster_rec(working_cluster_rec);
+
+		working_cluster_rec = slurm_list_pop(cluster_list);
+		fsd_log_debug(("set working_cluster_rec = %s",working_cluster_rec->name));
+	}
+	FINALLY
+	{
+		if (cluster_list)
+			slurm_list_destroy(cluster_list);
+		cluster_list = NULL;
+	}
+	END_TRY
+
+	fsd_log_return(( "" ));
+}

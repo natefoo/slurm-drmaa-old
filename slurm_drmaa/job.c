@@ -32,8 +32,10 @@
 #include <slurm_drmaa/job.h>
 #include <slurm_drmaa/session.h>
 #include <slurm_drmaa/util.h>
+#include <slurm_drmaa/slurm_missing.h>
+#include <slurm_drmaa/slurm_drmaa.h>
 
-#include <slurm/slurm.h>
+#include <slurm/slurmdb.h>
 #include <stdint.h>
 
 static void
@@ -41,12 +43,16 @@ slurmdrmaa_job_control( fsd_job_t *self, int action )
 {
 	slurmdrmaa_job_t *slurm_self = (slurmdrmaa_job_t*)self;
 	job_desc_msg_t job_desc;
+	job_id_spec_t job_id_spec;
 
 	fsd_log_enter(( "({job_id=%s}, action=%d)", self->job_id, action ));
 
 	fsd_mutex_lock( &self->session->drm_connection_mutex );
 	TRY
 	 {
+		job_id_spec.original = self->job_id;
+		self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
+
 		switch( action )
 		 {
 			case DRMAA_CONTROL_SUSPEND:
@@ -96,6 +102,7 @@ slurmdrmaa_job_control( fsd_job_t *self, int action )
 	 }
 	FINALLY
 	 {
+		self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
 		fsd_mutex_unlock( &self->session->drm_connection_mutex );
 	 }
 	END_TRY
@@ -109,11 +116,16 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 {
 	job_info_msg_t *job_info = NULL;
 	slurmdrmaa_job_t * slurm_self = (slurmdrmaa_job_t *) self;
+	job_id_spec_t job_id_spec;
+
 	fsd_log_enter(( "({job_id=%s})", self->job_id ));
 
 	fsd_mutex_lock( &self->session->drm_connection_mutex );
 	TRY
 	{
+		job_id_spec.original = self->job_id;
+		self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
+
 		if ( slurm_load_job( &job_info, fsd_atoi(self->job_id), SHOW_ALL) ) {
 			int _slurm_errno = slurm_get_errno();
 
@@ -204,7 +216,7 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 	{
 		if(job_info != NULL)
 			slurm_free_job_info_msg (job_info);
-
+		self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
 		fsd_mutex_unlock( &self->session->drm_connection_mutex );
 	}
 	END_TRY
@@ -215,8 +227,13 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 static void
 slurmdrmaa_job_on_missing( fsd_job_t *self )
 {
+	job_id_spec_t job_id_spec;
 
 	fsd_log_enter(( "({job_id=%s})", self->job_id ));
+
+	job_id_spec.original = self->job_id;
+	self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
+
 	fsd_log_warning(( "Job %s missing from DRM queue", self->job_id ));
 
 	fsd_log_info(( "job_on_missing: last job_ps: %s (0x%02x)", drmaa_job_ps_to_str(self->state), self->state));
@@ -234,6 +251,8 @@ slurmdrmaa_job_on_missing( fsd_job_t *self )
 
 	fsd_cond_broadcast( &self->status_cond);
 	fsd_cond_broadcast( &self->session->wait_condition );
+
+	self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
 
 	fsd_log_return(( "; job_ps=%s, exit_status=%d", drmaa_job_ps_to_str(self->state), self->exit_status ));
 }
