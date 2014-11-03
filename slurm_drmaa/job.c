@@ -1,4 +1,4 @@
-/* $Id: job.c 34 2013-12-02 09:44:05Z mmamonski $ */
+/* $Id: job.c 41 2014-07-23 08:28:11Z pkopta $ */
 /*
  * PSNC DRMAA for SLURM
  * Copyright (C) 2011 Poznan Supercomputing and Networking Center
@@ -32,10 +32,8 @@
 #include <slurm_drmaa/job.h>
 #include <slurm_drmaa/session.h>
 #include <slurm_drmaa/util.h>
-#include <slurm_drmaa/slurm_missing.h>
-#include <slurm_drmaa/slurm_drmaa.h>
 
-#include <slurm/slurmdb.h>
+#include <slurm/slurm.h>
 #include <stdint.h>
 
 static void
@@ -43,16 +41,12 @@ slurmdrmaa_job_control( fsd_job_t *self, int action )
 {
 	slurmdrmaa_job_t *slurm_self = (slurmdrmaa_job_t*)self;
 	job_desc_msg_t job_desc;
-	job_id_spec_t job_id_spec;
 
 	fsd_log_enter(( "({job_id=%s}, action=%d)", self->job_id, action ));
 
 	fsd_mutex_lock( &self->session->drm_connection_mutex );
 	TRY
 	 {
-		job_id_spec.original = self->job_id;
-		self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
-
 		switch( action )
 		 {
 			case DRMAA_CONTROL_SUSPEND:
@@ -81,7 +75,7 @@ slurmdrmaa_job_control( fsd_job_t *self, int action )
 			case DRMAA_CONTROL_RELEASE:
 			  /* change priority back*/
 			  	slurm_init_job_desc_msg(&job_desc);
-				job_desc.priority = 1;
+				job_desc.priority = INFINITE;
 				job_desc.job_id = atoi(self->job_id);
 				if(slurm_update_job(&job_desc) == -1) {
 					fsd_exc_raise_fmt(	FSD_ERRNO_INTERNAL_ERROR,"slurm_update_job error: %s,job_id: %s",slurm_strerror(slurm_get_errno()),self->job_id);
@@ -102,7 +96,6 @@ slurmdrmaa_job_control( fsd_job_t *self, int action )
 	 }
 	FINALLY
 	 {
-		self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
 		fsd_mutex_unlock( &self->session->drm_connection_mutex );
 	 }
 	END_TRY
@@ -116,16 +109,11 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 {
 	job_info_msg_t *job_info = NULL;
 	slurmdrmaa_job_t * slurm_self = (slurmdrmaa_job_t *) self;
-	job_id_spec_t job_id_spec;
-
 	fsd_log_enter(( "({job_id=%s})", self->job_id ));
 
 	fsd_mutex_lock( &self->session->drm_connection_mutex );
 	TRY
 	{
-		job_id_spec.original = self->job_id;
-		self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
-
 		if ( slurm_load_job( &job_info, fsd_atoi(self->job_id), SHOW_ALL) ) {
 			int _slurm_errno = slurm_get_errno();
 
@@ -144,12 +132,10 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 				case JOB_PENDING:
 					switch(job_info->job_array[0].state_reason)
 					{
-						#if SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(2,2,0)
 						case WAIT_HELD_USER:   /* job is held by user */
 							fsd_log_debug(("interpreting as DRMAA_PS_USER_ON_HOLD"));
 							self->state = DRMAA_PS_USER_ON_HOLD;
 							break;
-						#endif
 						case WAIT_HELD:  /* job is held by administrator */
 							fsd_log_debug(("interpreting as DRMAA_PS_SYSTEM_ON_HOLD"));
 							self->state = DRMAA_PS_SYSTEM_ON_HOLD;
@@ -185,9 +171,7 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 				case JOB_FAILED:
 				case JOB_TIMEOUT:
 				case JOB_NODE_FAIL:
-				#if SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(2,3,0)
 				case JOB_PREEMPTED:
-				#endif
 					fsd_log_debug(("interpreting as DRMAA_PS_FAILED"));
 					self->state = DRMAA_PS_FAILED;
 					self->exit_status = job_info->job_array[0].exit_code;
@@ -220,7 +204,7 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 	{
 		if(job_info != NULL)
 			slurm_free_job_info_msg (job_info);
-		self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
+
 		fsd_mutex_unlock( &self->session->drm_connection_mutex );
 	}
 	END_TRY
@@ -231,13 +215,8 @@ slurmdrmaa_job_update_status( fsd_job_t *self )
 static void
 slurmdrmaa_job_on_missing( fsd_job_t *self )
 {
-	job_id_spec_t job_id_spec;
 
 	fsd_log_enter(( "({job_id=%s})", self->job_id ));
-
-	job_id_spec.original = self->job_id;
-	self->job_id = slurmdrmaa_set_job_id(&job_id_spec);
-
 	fsd_log_warning(( "Job %s missing from DRM queue", self->job_id ));
 
 	fsd_log_info(( "job_on_missing: last job_ps: %s (0x%02x)", drmaa_job_ps_to_str(self->state), self->state));
@@ -255,8 +234,6 @@ slurmdrmaa_job_on_missing( fsd_job_t *self )
 
 	fsd_cond_broadcast( &self->status_cond);
 	fsd_cond_broadcast( &self->session->wait_condition );
-
-	self->job_id = slurmdrmaa_unset_job_id(&job_id_spec);
 
 	fsd_log_return(( "; job_ps=%s, exit_status=%d", drmaa_job_ps_to_str(self->state), self->exit_status ));
 }
@@ -283,16 +260,14 @@ slurmdrmaa_job_create_req(
 		fsd_drmaa_session_t *session,
 		const fsd_template_t *jt,
 		fsd_environ_t **envp,
-		job_desc_msg_t * job_desc,
-		int n_job /* ~job_step */
-		)
+		job_desc_msg_t * job_desc)
 {
 	fsd_expand_drmaa_ph_t *volatile expand = NULL;
 
 	TRY
 	 {
-		expand = fsd_expand_drmaa_ph_new( NULL, NULL, fsd_asprintf("%d",n_job) );
-		slurmdrmaa_job_create( session, jt, envp, expand, job_desc, n_job);
+		expand = fsd_expand_drmaa_ph_new( NULL, NULL, fsd_strdup("%a") );
+		slurmdrmaa_job_create( session, jt, envp, expand, job_desc );
 	 }
 	EXCEPT_DEFAULT
 	 {
@@ -330,8 +305,7 @@ slurmdrmaa_job_create(
 		const fsd_template_t *jt,
 		fsd_environ_t **envp,
 		fsd_expand_drmaa_ph_t *expand, 
-		job_desc_msg_t * job_desc,
-		int n_job
+		job_desc_msg_t * job_desc
 		)
 {
 	const char *input_path_orig = NULL;
@@ -347,10 +321,6 @@ slurmdrmaa_job_create(
 	const char *value;
 	const char *const *vector;
 	const char *job_category = "default";
-	
-	slurmdrmaa_init_job_desc( job_desc );
-
-	slurm_init_job_desc_msg( job_desc );
 	
 	job_desc->user_id = getuid();
 	job_desc->group_id = getgid();
@@ -684,6 +654,13 @@ slurmdrmaa_job_create(
 	 	}
  	}
 
+    /* set defaults for constraints - ref: slurm.h */
+    fsd_log_debug(("# Setting defaults for tasks and processors" ));
+    job_desc->num_tasks = 1;
+    job_desc->min_cpus = 0;
+    job_desc->cpus_per_task = 0;
+    job_desc->pn_min_cpus = 0;
+
 	/* native specification */
 	value = jt->get_attr( jt, DRMAA_NATIVE_SPECIFICATION );
 	if( value )
@@ -692,6 +669,6 @@ slurmdrmaa_job_create(
 		slurmdrmaa_parse_native(job_desc, value);
 	}
 	
-}		
+}
 
 

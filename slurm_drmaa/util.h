@@ -24,9 +24,7 @@
 #	include <config.h>
 #endif
 
-#include <slurm_drmaa/slurm_drmaa.h>
-
-#include <slurm/slurmdb.h>
+#include <slurm/slurm.h>
 
 /* Parse time to minutes */
 unsigned slurmdrmaa_datetime_parse( const char *string );
@@ -34,8 +32,5 @@ unsigned slurmdrmaa_datetime_parse( const char *string );
 void slurmdrmaa_init_job_desc(job_desc_msg_t *job_desc);
 void slurmdrmaa_free_job_desc(job_desc_msg_t *job_desc);
 void slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value);
-char * slurmdrmaa_set_job_id(job_id_spec_t *job_id_spec);
-char * slurmdrmaa_unset_job_id(job_id_spec_t *job_id_spec);
-void slurmdrmaa_set_cluster(const char * value);
 
 #endif /* __SLURM_DRMAA__UTIL_H */

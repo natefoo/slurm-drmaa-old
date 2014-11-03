@@ -1,4 +1,4 @@
-/* $Id: session.c 13 2011-01-02 16:13:14Z mmatloka $ */
+/* $Id: session.c 42 2014-09-05 08:07:41Z pkopta $ */
 /*
  * PSNC DRMAA for SLURM
  * Copyright (C) 2011 Poznan Supercomputing and Networking Center
@@ -25,17 +25,14 @@
 #include <slurm_drmaa/job.h>
 #include <slurm_drmaa/session.h>
 #include <slurm_drmaa/util.h>
-#include <slurm_drmaa/slurm_missing.h>
 
-#include <slurm/slurmdb.h>
+#include <slurm/slurm.h>
 
 static char *slurmdrmaa_session_run_job(fsd_drmaa_session_t *self, const fsd_template_t *jt);
 
 static fsd_iter_t *slurmdrmaa_session_run_bulk(	fsd_drmaa_session_t *self,const fsd_template_t *jt, int start, int end, int incr );
 
 static fsd_job_t *slurmdrmaa_session_new_job( fsd_drmaa_session_t *self, const char *job_id );
-
-slurmdb_cluster_rec_t *working_cluster_rec = NULL;
 
 fsd_drmaa_session_t *
 slurmdrmaa_session_new( const char *contact )
@@ -95,80 +92,62 @@ slurmdrmaa_session_run_bulk(
 {
 	fsd_job_t *volatile job = NULL;
 	char **volatile job_ids = NULL;
-	unsigned n_jobs = 0;
+	unsigned n_jobs = 1;
 	volatile bool connection_lock = false;
 	fsd_environ_t *volatile env = NULL;
 	job_desc_msg_t job_desc;
 	submit_response_msg_t *submit_response = NULL;
+	job_info_msg_t *job_info = NULL;
+
+    /* zero out the struct, and set default vaules */
+	slurm_init_job_desc_msg( &job_desc );
 	
 	TRY
 	 {
-
-		if( start != end )
+        unsigned i;
+		if( start != end ) {
 			n_jobs = (end - start) / incr + 1;
-		else 
-			n_jobs = 1;	
+         } else {
+            n_jobs = 1;
+         }
 
-		if(  start != end )
-		 {
-			unsigned idx, i;
+        fsd_calloc( job_ids, n_jobs+1, char* );
 
-			fsd_calloc( job_ids, n_jobs+1, char* );
+		if ( start != 0 || end != 0 || incr != 0 ) {
+        	job_desc.array_inx = fsd_asprintf( "%d-%d:%d", start, end, incr );
+		}
 
-			for( idx = start, i = 0;  idx <= (unsigned)end;  idx += incr, i++ )
-			 {
-				connection_lock = fsd_mutex_lock( &self->drm_connection_mutex );
-				slurmdrmaa_job_create_req( self, jt, (fsd_environ_t**)&env , &job_desc, idx);
-				if(slurm_submit_batch_job(&job_desc,&submit_response)){
-					fsd_exc_raise_fmt(
-						FSD_ERRNO_INTERNAL_ERROR,"slurm_submit_batch_job: %s",slurm_strerror(slurm_get_errno()));
+		connection_lock = fsd_mutex_lock( &self->drm_connection_mutex );
+		slurmdrmaa_job_create_req( self, jt, (fsd_environ_t**)&env , &job_desc );
+		if(slurm_submit_batch_job(&job_desc,&submit_response)){
+			fsd_exc_raise_fmt(
+				FSD_ERRNO_INTERNAL_ERROR,"slurm_submit_batch_job: %s",slurm_strerror(slurm_get_errno()));
+		}
+
+		connection_lock = fsd_mutex_unlock( &self->drm_connection_mutex );
+
+		fsd_log_debug(("job %u submitted", submit_response->job_id));
+
+		if ( start != 0 || end != 0 || incr != 0 ) {
+			if ( SLURM_SUCCESS == slurm_load_job( &job_info, submit_response->job_id, 0) )
+			{
+				fsd_assert(  job_info->record_count == n_jobs );
+				for(i=0; i < job_info->record_count; i++)
+				{
+					job_ids[i] = fsd_asprintf( "%d", job_info->job_array[i].job_id);
+
+					job = slurmdrmaa_job_new( fsd_strdup(job_ids[i]) );
+					job->session = self;
+					job->submit_time = time(NULL);
+					self->jobs->add( self->jobs, job );
+					job->release( job );
+					job = NULL;
 				}
-
-				if (!working_cluster_rec)
-					fsd_log_debug(("job %u submitted", submit_response->job_id));
-				else
-					fsd_log_debug(("job %u submitted on cluster %s", submit_response->job_id, working_cluster_rec->name));
-				connection_lock = fsd_mutex_unlock( &self->drm_connection_mutex );
-
-
-				if (!working_cluster_rec)
-					job_ids[i] = fsd_asprintf("%d",submit_response->job_id); /*TODO  */
-				else
-					job_ids[i] = fsd_asprintf("%d.%s",submit_response->job_id,working_cluster_rec->name);
-
-				job = slurmdrmaa_job_new( fsd_strdup(job_ids[i]) ); 
-				job->session = self;
-				job->submit_time = time(NULL);
-				self->jobs->add( self->jobs, job );
-				job->release( job );  
-				job = NULL;
-				if (working_cluster_rec)
-					slurmdb_destroy_cluster_rec(working_cluster_rec);
-				working_cluster_rec = NULL;
-			 }
-			fsd_assert( i == n_jobs );
-		 }
-		else /* ! bulk */
-		 {
-			fsd_calloc( job_ids, n_jobs+1, char* );
-			
-			connection_lock = fsd_mutex_lock( &self->drm_connection_mutex );
-			slurmdrmaa_job_create_req( self, jt, (fsd_environ_t**)&env , &job_desc, 0);
-			if(slurm_submit_batch_job(&job_desc,&submit_response)){
-				fsd_exc_raise_fmt(
-					FSD_ERRNO_INTERNAL_ERROR,"slurm_submit_batch_job: %s",slurm_strerror(slurm_get_errno()));
+			} else  {
+				fsd_exc_raise_fmt( FSD_ERRNO_INTERNAL_ERROR,"slurm_load_job: %s",slurm_strerror(slurm_get_errno()));
 			}
-
-			if (!working_cluster_rec)
-				fsd_log_debug(("job %u submitted", submit_response->job_id));
-			else
-				fsd_log_debug(("job %u submitted on cluster %s", submit_response->job_id, working_cluster_rec->name));
-			connection_lock = fsd_mutex_unlock( &self->drm_connection_mutex );
-			
-			if (!working_cluster_rec)
-				job_ids[0] = fsd_asprintf( "%d", submit_response->job_id); /* .0*/
-			else
-				job_ids[0] = fsd_asprintf("%d.%s",submit_response->job_id,working_cluster_rec->name);
+		} else {
+			job_ids[0] = fsd_asprintf( "%d", submit_response->job_id); /* .0*/
 
 			job = slurmdrmaa_job_new( fsd_strdup(job_ids[0]) ); /* TODO: ??? */
 			job->session = self;
@@ -176,10 +155,7 @@ slurmdrmaa_session_run_bulk(
 			self->jobs->add( self->jobs, job );
 			job->release( job );
 			job = NULL;
-			if (working_cluster_rec)
-				slurmdb_destroy_cluster_rec(working_cluster_rec);
-			working_cluster_rec = NULL;
-		 }
+		}
 	 }
 	 ELSE
 	{
@@ -217,4 +193,3 @@ slurmdrmaa_session_new_job( fsd_drmaa_session_t *self, const char *job_id )
 	job->session = self;
 	return job;
 }
-
