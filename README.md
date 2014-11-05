@@ -5,12 +5,20 @@ The manual for the DRMAA for Simple Linux Utility for Resource Management
 (SLURM) is available at project wiki:
 http://apps.man.poznan.pl/trac/slurm-drmaa/wiki
 
-Modifications
-=============
+Branches
+========
 
-Current changes to this fork from the upstream (PSNC) version are:
-
-- Added support for Slurm's multicluster `-M`/`--clusters` native options.
+- [master](../../tree/master) - slurm-drmaa 1.0.7 (from source tarball, not
+  SVN) with mostly-complete Slurm multicluster `-M`/`--clusters` support (see
+  **Limitations** below).
+- [slurm-drmaa-1.2.0](../../tree/slurm-drmaa-1.2.0) - slurm-drmaa 1.2.0 from
+  SVN, no modifications
+- [slurm-drmaa-1.2.0-clusters](../../tree/slurm-drmaa-1.2.0-clusters) -
+  slurm-drmaa 1.2.0 with the same cluster modifications as in the master
+  branch.
+- [slurm-drmaa-1.2.0-multisubmit](../../tree/slurm-drmaa-1.2.0-multisubmit) -
+  slurm-drmaa 1.2.0 with the multicluster submission (i.e. `sbatch
+  --clusters=cluster1,cluster2`) functionality (See **Limitations** below)
 
 Limitations
 ===========
@@ -52,12 +60,36 @@ slurm-drmaa's lib directory and configured slurm-drmaa with
 `libslurmdb` elsewhere and/or simply setting `$LD_LIBRARY_PATH` at application
 runtime also work.
 
+Note that root privileges are not required for this to work. The canonical copy
+of libslurmdbd.so does not need to be modified, only the one that libdrmaa
+links to at runtime.
+
 Unimplemented features
 ----------------------
 
 Multiple clusters specified in a single `-M`/`--clusters` option (e.g. `-M
-cluster1,cluster2`) are not supported at this time.  The code to support this
-can probably be copied from Slurm's `src/sbatch/mult_cluster.c`.
+cluster1,cluster2`) are not supported in the `master` and
+`slurm-drmaa-1.2.0-clusters` branches.
+
+However, support for it has been hacked in to the
+`slurm-drmaa-1.2.0-multisubmit` branch. From the commit message:
+
+This is fairly hacky because the functionality to do this properly is not
+available via Slurm's public API. And:
+
+1. I wasn't going to take the time to figure out the mess of private headers I
+   had to extract from the slurm source and include here, so a copy of the
+   Slurm source is required at compile time.
+2. I have about 1 hours' worth of experience with autoconf/automake at this
+   point, so the changes I made there are crude.
+3. I'm not going to put a lot of effort into making this nicer since the Slurm
+   development team has put implementing the features necessary for doing this
+   properly on their roadmap for Slurm 15.08:
+   http://bugs.schedmd.com/show_bug.cgi?id=1234
+
+That said, once compiled, it will work with a standard Slurm 14.11 (or earlier
+versions with the `working_cluster_rec` patch).
+
 
 Potential Job ID incompatibilites
 ---------------------------------
