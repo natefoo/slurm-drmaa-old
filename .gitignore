@@ -16,3 +16,11 @@ drmaa_utils/drmaa_utils/drmaa-run
 drmaa_utils/drmaa_utils/hpc-bash
 drmaa_utils/m4/libtool.m4
 drmaa_utils/m4/lt*.m4
+
+m4/libtool.m4
+m4/lt*.m4
+
+scripts
+config.h.in
+configure
+aclocal.m4
