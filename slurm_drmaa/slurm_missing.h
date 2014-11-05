@@ -23,6 +23,8 @@
 #if SLURM_VERSION_NUMBER < SLURM_VERSION_NUM(14,11,0)
 extern List slurmdb_get_info_cluster(char *cluster_name);
 extern void * slurm_list_pop (List l);
+extern void * slurm_list_peek (List l);
+extern void * slurm_list_remove (ListIterator i);
 extern void slurmdb_destroy_cluster_rec(void *object);
 #endif
 

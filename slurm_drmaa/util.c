@@ -26,6 +26,7 @@
 #include <drmaa_utils/datetime_impl.h>
 #include <slurm_drmaa/slurm_missing.h>
 #include <slurm_drmaa/slurm_drmaa.h>
+#include "mult_cluster.h"
 
 #ifndef lint
 static char rcsid[]
@@ -130,7 +131,6 @@ enum slurm_native {
 	SLURM_NATIVE_TIME_LIMIT,
 	SLURM_NATIVE_NTASKS,
 	SLURM_NATIVE_GRES,
-	SLURM_NATIVE_CLUSTERS,
 	SLURM_NATIVE_NO_KILL,
 	SLURM_NATIVE_LICENSES,
 	SLURM_NATIVE_MAIL_TYPE,
@@ -301,14 +301,6 @@ slurmdrmaa_add_attribute(job_desc_msg_t *job_desc, unsigned attr, const char *va
 			fsd_log_debug(("# gres = %s",value));
 			job_desc->gres = fsd_strdup(value);
 			break;
-		case SLURM_NATIVE_CLUSTERS:
-			#if SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(2,2,0)
-			fsd_log_debug(("# clusters = %s",value));
-			slurmdrmaa_set_cluster(value);
-			#else
-			fsd_log_error(("clusters not supported in this version of SLURM."));
-			#endif
-			break;
 		case SLURM_NATIVE_NO_KILL:
 			fsd_log_debug(("# no_kill = 1"));
 			job_desc->kill_on_node_fail = 0;
@@ -339,7 +331,7 @@ slurmdrmaa_add_attribute(job_desc_msg_t *job_desc, unsigned attr, const char *va
 }
 
 void 
-slurmdrmaa_parse_additional_attr(job_desc_msg_t *job_desc,const char *add_attr)
+slurmdrmaa_parse_additional_attr(job_desc_msg_t *job_desc,const char *add_attr,char **clusters_opt)
 {
 	char * volatile name = NULL;
 	char *value = NULL;
@@ -429,7 +421,8 @@ slurmdrmaa_parse_additional_attr(job_desc_msg_t *job_desc,const char *add_attr)
 			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_GRES,value);
 		}
 		else if(strcmp(name,"clusters") == 0) {
-			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_CLUSTERS,value);
+			fsd_log_debug(("# clusters = %s",value));
+			*clusters_opt = fsd_strdup(value);
 		}
 		else if(strcmp(name,"no-kill") == 0) {
 			slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_NO_KILL,NULL);
@@ -472,6 +465,10 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 	char * volatile native_spec_copy = fsd_strdup(native_specification);
 	char * ctxt = NULL;
 	int opt = 0;
+	/* cluster handling occurs in the slurmdb context and has no member in
+	 * job_desc, and for multicluster selection to work, readiness must be
+	 * checked after job constraints are finalized */
+	char *clusters_opt = NULL;
 		
 	fsd_log_enter(( "" ));
 	TRY
@@ -484,7 +481,7 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 							native_specification);
 				}
 				if(arg[1] == '-') {
-					slurmdrmaa_parse_additional_attr(job_desc, arg+2);
+					slurmdrmaa_parse_additional_attr(job_desc, arg+2, &clusters_opt);
 				}
 				else {
 					opt = arg[1];
@@ -528,7 +525,8 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 						slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_LICENSES, arg);
 						break;							
 					case 'M' :
-						slurmdrmaa_add_attribute(job_desc,SLURM_NATIVE_CLUSTERS, arg);
+						fsd_log_debug(("# clusters = %s",value));
+						clusters_opt = fsd_strdup(arg);
 						break;
 					default :
 							fsd_exc_raise_fmt(FSD_DRMAA_ERRNO_INVALID_ATTRIBUTE_VALUE,
@@ -576,6 +574,12 @@ slurmdrmaa_parse_native(job_desc_msg_t *job_desc, const char * value)
 		fsd_free(native_specification);
 	 }
 	END_TRY
+
+	if (clusters_opt)
+	{
+		slurmdrmaa_set_first_avail_cluster(clusters_opt, job_desc);
+		fsd_free(clusters_opt);
+	}
 
 	fsd_log_return(( "" ));
 }
@@ -658,7 +662,8 @@ slurmdrmaa_set_cluster(const char * value)
 
 		if (slurm_list_count(cluster_list) > 1)
 			fsd_exc_raise_fmt(FSD_DRMAA_ERRNO_INVALID_ATTRIBUTE_VALUE,
-					"Only one cluster can be specified at this time");
+					"More than one cluster returned for value '%s'",
+					value);
 
 		if (working_cluster_rec)
 			slurmdb_destroy_cluster_rec(working_cluster_rec);

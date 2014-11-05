@@ -64,7 +64,7 @@ if test x$ac_cv_prog_cc_stdc = xno; then
 fi
 
 if test x$GCC = xyes; then
-	CFLAGS="-pedantic -ansi ${CFLAGS}"
+	CFLAGS="-pedantic -std=c99 ${CFLAGS}"
 fi
 AM_CONDITIONAL([GCC], [test x$GCC = xyes])
 
@@ -127,6 +127,24 @@ if ! echo $ac_configure_args | ${EGREP} -q '(--)(exec-)?prefix'; then
 	fi
 fi
 CPPFLAGS="${CPPFLAGS} -DCONFDIR=${sysconfdir}"
+
+AC_ARG_WITH([slurm-src], [AC_HELP_STRING([--with-slurm-src=<source-dir>],
+            [Path to source directory (containing src/common/)])])
+AC_SUBST(SLURM_SRC)
+AC_MSG_CHECKING([for SLURM source option])
+if test x$with_slurm_src != x; then
+    AC_MSG_RESULT([$with_slurm_src])
+else
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([
+SLURM source option unset:
+add --with-slurm-src with appropriate locations.])
+fi
+
+AC_CHECK_FILE(${with_slurm_src}, , [AC_MSG_ERROR([
+SLURM source not found:
+add --with-slurm-src with appropriate locations.]) ])
+SLURM_SRC=${with_slurm_src}
 
 # headers:
 AC_HEADER_STDC

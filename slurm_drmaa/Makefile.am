@@ -24,10 +24,12 @@ libdrmaa_la_SOURCES = \
  drmaa.c \
  job.c job.h \
  session.c session.h \
- util.c util.h
+ util.c util.h \
+ mult_cluster.c mult_cluster.h
 libdrmaa_la_CPPFLAGS = @SLURM_INCLUDES@ -I$(top_srcdir)/drmaa_utils/ 
 if GCC
 libdrmaa_la_CPPFLAGS += -Wno-long-long 
+libdrmaa_la_CFLAGS = -iquote @SLURM_SRC@
 endif
 
 libdrmaa_la_LIBADD = ../drmaa_utils/drmaa_utils/libdrmaa_utils.la @SLURM_LIBS@
