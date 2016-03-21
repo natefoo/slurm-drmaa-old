@@ -9,7 +9,8 @@ Branches
 ========
 
 - [master](../../tree/master) - slurm-drmaa 1.0.7 (from source tarball, not
-  SVN) with mostly-complete Slurm multicluster `-M`/`--clusters` support (see
+  SVN) with mostly-complete Slurm multicluster `-M`/`--clusters` support (it is
+  possible to specify 1 cluster with this option, but not multiple, see
   **Limitations** below).
 - [slurm-drmaa-1.2.0](../../tree/slurm-drmaa-1.2.0) - slurm-drmaa 1.2.0 from
   SVN, no modifications
@@ -17,8 +18,11 @@ Branches
   slurm-drmaa 1.2.0 with the same cluster modifications as in the master
   branch.
 - [slurm-drmaa-1.2.0-multisubmit](../../tree/slurm-drmaa-1.2.0-multisubmit) -
-  slurm-drmaa 1.2.0 with the multicluster submission (i.e. `sbatch
+  slurm-drmaa 1.2.0 with full multicluster submission (i.e. `sbatch
   --clusters=cluster1,cluster2`) functionality (See **Limitations** below)
+- [slurm-drmaa-1.2.0-multisubmit-15.08](../../tree/slurm-drmaa-1.2.0-multisubmit-15.08) -
+  slurm-drmaa 1.2.0 with full multicluster submission (i.e. `sbatch
+  --clusters=cluster1,cluster2`) functionality, requires Slurm 15.08 or later.
 
 Limitations
 ===========
@@ -89,6 +93,9 @@ available via Slurm's public API. And:
 
 That said, once compiled, it will work with a standard Slurm 14.11 (or earlier
 versions with the `working_cluster_rec` patch).
+
+Proper support for multiple cluster submission with Slurm 15.08 and later is
+available in the `slurm-drmaa-1.2.0-multicluster-15.08` branch.
 
 
 Potential Job ID incompatibilites
