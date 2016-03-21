@@ -4,6 +4,7 @@
 .deps
 .libs
 Makefile
+Makefile.in
 Doxyfile
 autom4te.cache
 config.log
