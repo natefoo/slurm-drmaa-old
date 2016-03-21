@@ -24,6 +24,23 @@ Branches
   slurm-drmaa 1.2.0 with full multicluster submission (i.e. `sbatch
   --clusters=cluster1,cluster2`) functionality, requires Slurm 15.08 or later.
 
+RPM
+===
+
+I added a `slurm-drmaa.spec` file in the master branch (but it can be used with any branch) for use with `rpmbuild` to create an RPM. My process (on CentOS 6) is:
+
+```console
+% ./autogen.sh
+% make distclean
+% find . -type d -name autom4te.cache -print0 | xargs -0 rm -rf
+% ragel -o drmaa_utils/drmaa_utils/timedelta.c drmaa_utils/drmaa_utils/timedelta.rl
+% cp slurm-drmaa.spec ~/rpmbuild/SPECS
+% cd ..
+% tar zcf slurm-drmaa-1.2.0.tar.gz --exclude=.git\* slurm-drmaa-1.2.0
+% cp slurm-drmaa-1.2.0.tar.gz ~/rpmbuild/SOURCES
+% rpmbuild -bb ~/rpmbuild/SPECS/slurm-drmaa.spec
+```
+
 Limitations
 ===========
 
