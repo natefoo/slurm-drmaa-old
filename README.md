@@ -24,6 +24,11 @@ Branches
   slurm-drmaa 1.2.0 with full multicluster submission (i.e. `sbatch
   --clusters=cluster1,cluster2`) functionality, requires Slurm 15.08 or later.
 
+TODO
+====
+
+I'd like to get the features in the various branches enabled by libslurm version (at runtime?) and merged back to a single branch.
+
 RPM
 ===
 
