@@ -27,7 +27,8 @@ Branches
 TODO
 ====
 
-I'd like to get the features in the various branches enabled by libslurm version (at runtime?) and merged back to a single branch.
+- Get the features in the various branches enabled by libslurm version (at runtime?) and merged back to a single branch.
+- Reimport the upstream repository from PSNC with full attributed SVN history
 
 RPM
 ===
