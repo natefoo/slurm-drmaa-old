@@ -25,6 +25,11 @@ management systems.
 %setup
 
 %build
+# -O2 causes sporadic uninterruptible hangs during job submission, decrease
+# optimization to -O1 until this is fixed
+RPM_OPT_FLAGS=`echo "$RPM_OPT_FLAGS" | sed -e 's/-O2 /-O1 /'`
+CFLAGS="$RPM_OPT_FLAGS"
+export CFLAGS
 %configure
 
 %install
